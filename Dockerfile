@@ -19,7 +19,8 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p /opt/novnc && \
     wget -qO- https://github.com/novnc/noVNC/archive/v1.4.0.tar.gz | tar xz -C /opt/novnc --strip-components=1 && \
     mkdir -p /opt/novnc/utils/websockify && \
-    wget -qO- https://github.com/novnc/websockify/archive/v0.11.0.tar.gz | tar xz -C /opt/novnc/utils/websockify --strip-components=1
+    wget -qO- https://github.com/novnc/websockify/archive/v0.11.0.tar.gz | tar xz -C /opt/novnc/utils/websockify --strip-components=1 && \
+    ln -s /opt/novnc/vnc.html /opt/novnc/index.html
 
 WORKDIR /app
 
