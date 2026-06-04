@@ -1,0 +1,13 @@
+{
+  "name": "jddj-autoreply-app",
+  "version": "1.0.0",
+  "description": "京东秒送商家端客服自动回复与监测工具(容器版)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "private": true
+}
