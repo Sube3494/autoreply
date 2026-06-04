@@ -1,6 +1,6 @@
 FROM node:24-bullseye
 
-# 1. 安装系统图形支持软件、Google Chrome 稳定版、Xvfb 和 VNC
+# 1. 安装系统图形支持软件、依赖包以及 Xvfb / VNC 桌面环境
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -10,10 +10,9 @@ RUN apt-get update && apt-get install -y \
     x11vnc \
     fluxbox \
     dbus-x11 \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
+    && wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
+    && rm google-chrome-stable_current_amd64.deb \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. 安装 noVNC（让我们可以直接在浏览器中操控容器内 Chrome 画面）
