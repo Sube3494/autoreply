@@ -1,14 +1,14 @@
 #!/bin/bash
 set -e
 
-# 1. 启动 Xvfb 虚拟屏幕，设置分辨率为 1280x800 色深 24
-Xvfb :99 -screen 0 1280x800x24 &
+# 1. 启动 Xvfb 虚拟屏幕，设置分辨率为 1920x1080 色深 24
+Xvfb :99 -screen 0 1920x1080x24 &
 export DISPLAY=:99
 
 # 2. 启动 Fluxbox 窗口管理器以管理浏览器窗口
 fluxbox &
 
-# 3. 启动 x11vnc，提供虚拟屏幕的 VNC 连接接口
+# 3. 启动 x11vnc，提供虚拟屏幕 of VNC 连接接口
 x11vnc -display :99 -forever -shared -nopw -listen localhost -xkb &
 
 # 4. 启动 noVNC 代理服务，将 VNC 画面渲染到 HTML5 页面，监听 6080 端口
@@ -21,7 +21,8 @@ google-chrome-stable \
     --user-data-dir=/app/chrome_profile \
     --no-sandbox \
     --disable-dev-shm-usage \
-    --window-size=1280,800 \
+    --start-maximized \
+    --window-size=1920,1080 \
     "https://store.jddj.com/frame/1032/5120" &
 
 # 6. 等待浏览器完全打开并建立调试接口
