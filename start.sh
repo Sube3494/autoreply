@@ -23,6 +23,9 @@ sleep 1  # 等待 VNC 服务绑定端口
 /opt/novnc/utils/novnc_proxy --vnc 127.0.0.1:5900 --listen 0.0.0.0:6080 &
 echo "[start.sh] noVNC 网页投影客户端已在 6080 端口就绪！"
 
+# 强行清理上一次因非正常退出而残留的 Chrome 单例锁文件，防止因锁定导致启动闪退
+rm -f /root/chrome_profile/Singleton*
+
 # 5. 启动自带的 Google Chrome，显式绑定 DISPLAY 变量，并重定向启动日志到文件以供诊断
 # 核心：将数据目录改为 /root/chrome_profile，规避工作区权限冲突，并加上调试诊断重定向
 DISPLAY=:99 google-chrome-stable \
