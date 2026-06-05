@@ -23,6 +23,10 @@ RUN mkdir -p /opt/novnc && \
     wget -qO- https://github.com/novnc/websockify/archive/v0.11.0.tar.gz | tar xz -C /opt/novnc/utils/websockify --strip-components=1 && \
     ln -s /opt/novnc/vnc.html /opt/novnc/index.html
 
+# 设置中国标准时区（东八区）
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 WORKDIR /app
 
 # 3. 复制相关项目代码文件

@@ -122,7 +122,7 @@ function connectToPage(pageInfo) {
   };
 }
 
-// 发送指令给特定页面的封装
+// 发送指令给特定页面的封装（包含 5 秒超时保护，防止 Promise 悬空卡死）
 function evaluateInBrowser(ws, expression) {
   return new Promise((resolve, reject) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -140,9 +140,16 @@ function evaluateInBrowser(ws, expression) {
       }
     });
     
+    // 设置 5 秒超时定时器，防止 CDP 无响应导致 Node.js 程序无限卡死
+    const timeoutId = setTimeout(() => {
+      ws.removeEventListener('message', handleMessage);
+      reject(new Error("浏览器 CDP 执行超时(5000ms)"));
+    }, 5000);
+    
     const handleMessage = (event) => {
       const response = JSON.parse(event.data);
       if (response.id === id) {
+        clearTimeout(timeoutId); // 成功接收，清除超时器
         ws.removeEventListener('message', handleMessage);
         if (response.error) {
           reject(response.error);
@@ -174,6 +181,7 @@ async function runMonitoringLoopForPage(pageId) {
     
     try {
       // 1. 在浏览器内部执行监测逻辑
+      // 优化：重构了全量 DOM 元素检索机制，避免 querySelectorAll('*') 导致的 CPU 暴死卡顿
       const result = await evaluateInBrowser(conn.ws, `(async () => {
         try {
           let shopName = "";
@@ -183,9 +191,9 @@ async function runMonitoringLoopForPage(pageId) {
             shopName = headerText.split('\\n')[0] || "";
           }
           
-          // 确保勾选“只看未读”复选框
-          const unreadLabel = Array.from(document.querySelectorAll('*'))
-            .find(el => (el.innerText || '').trim() === '只看未读');
+          // 优化：仅在 checkbox 及其 wrapper 范围内查找，拒绝性能损耗
+          const unreadLabel = Array.from(document.querySelectorAll('.jd-im-checkbox-wrapper, label'))
+            .find(el => (el.innerText || '').includes('只看未读'));
           if (unreadLabel) {
             const parent = unreadLabel.parentElement;
             const checkbox = parent ? parent.querySelector('input[type=\"checkbox\"]') : null;
@@ -240,8 +248,8 @@ async function runMonitoringLoopForPage(pageId) {
         }
       })()`);
       
-      // 每 10 次轮询（约 30 秒）输出一次运行心跳，供用户确认状态并诊断选择器
-      if (loopCount >= 10) {
+      // 每 5 次轮询（约 15 秒）输出一次运行心跳，增强诊断可视化
+      if (loopCount >= 5) {
         loopCount = 0;
         const unreadCount = result ? (result.unreadCount || 0) : 0;
         const displayShop = (result && result.shopName) ? `[${result.shopName}]` : shopLabel;
@@ -333,8 +341,8 @@ async function runMonitoringLoopForPage(pageId) {
       
     } catch (err) {
       console.error(`${shopLabel} [ERROR] 轮询异常:`, err.message);
-      if (err.message.includes("WebSocket") || err.message.includes("关闭")) {
-        break; // 断开，退出此循环，同步模块会负责重连
+      if (err.message.includes("CDP 执行超时") || err.message.includes("WebSocket") || err.message.includes("关闭")) {
+        break; // 退出当前监测线程，sync 线程会自动为该页面重新建立连接
       }
     }
     
