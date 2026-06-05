@@ -33,15 +33,15 @@ function evaluate(ws, expression, timeoutMs = 5000) {
     });
 
     const timeout = setTimeout(() => {
-      ws.off('message', handle);
+      ws.removeEventListener('message', handle);
       reject(new Error(`CDP 执行超时 (${timeoutMs}ms)`));
     }, timeoutMs);
 
-    function handle(data) {
-      const response = JSON.parse(data.toString());
+    function handle(event) {
+      const response = JSON.parse(event.data);
       if (response.id === id) {
         clearTimeout(timeout);
-        ws.off('message', handle);
+        ws.removeEventListener('message', handle);
         if (response.error) {
           reject(response.error);
         } else if (response.result && response.result.result) {
@@ -52,7 +52,7 @@ function evaluate(ws, expression, timeoutMs = 5000) {
       }
     }
 
-    ws.on('message', handle);
+    ws.addEventListener('message', handle);
     ws.send(payload);
   });
 }
@@ -77,7 +77,7 @@ async function run() {
       const ws = new WebSocket(page.webSocketDebuggerUrl);
 
       await new Promise((resolve) => {
-        ws.on('open', async () => {
+        ws.addEventListener('open', async () => {
           console.log("-> WebSocket 连接成功！");
 
           // 测试 1：极简求值
@@ -162,8 +162,8 @@ async function run() {
           resolve();
         });
 
-        ws.on('error', (err) => {
-          console.error("WebSocket 连接出错:", err.message);
+        ws.addEventListener('error', (err) => {
+          console.log("WebSocket 连接出错");
           resolve();
         });
       });
