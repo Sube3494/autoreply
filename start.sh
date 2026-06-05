@@ -1,8 +1,13 @@
 #!/bin/bash
 set -e
 
-# 1. 启动 Xvfb 虚拟屏幕，设置分辨率为 1920x1080 色深 24
-Xvfb :99 -screen 0 1920x1080x24 &
+# 设置系统默认语言环境为中文，确保 Chrome 内部优先使用中文包
+export LANG=zh_CN.UTF-8
+export LANGUAGE=zh_CN:zh
+export LC_ALL=zh_CN.UTF-8
+
+# 1. 启动 Xvfb 虚拟屏幕，设置分辨率为较轻量、低负载的 1280x800 色深 24
+Xvfb :99 -screen 0 1280x800x24 &
 export DISPLAY=:99
 sleep 1  # 等待虚拟屏幕初始化
 
@@ -18,14 +23,18 @@ sleep 1  # 等待 VNC 服务绑定端口
 /opt/novnc/utils/novnc_proxy --vnc 127.0.0.1:5900 --listen 0.0.0.0:6080 &
 echo "[start.sh] noVNC 网页投影客户端已在 6080 端口就绪！"
 
-# 5. 启动自带的 Google Chrome，启用 9222 调试端口并持久化用户数据目录
+# 5. 启动自带的 Google Chrome，启用 9222 端口，强制语言为中文 zh-CN
+# 核心：必须加上 --disable-gpu 和 --disable-software-rasterizer 以防在无显卡容器中闪退
 google-chrome-stable \
     --remote-debugging-port=9222 \
     --user-data-dir=/app/chrome_profile \
     --no-sandbox \
     --disable-dev-shm-usage \
+    --disable-gpu \
+    --disable-software-rasterizer \
     --start-maximized \
-    --window-size=1920,1080 \
+    --window-size=1280,800 \
+    --lang=zh-CN \
     "https://store.jddj.com/frame/1032/5120" &
 
 # 6. 等待浏览器完全打开并建立调试接口
