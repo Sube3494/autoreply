@@ -45,10 +45,14 @@ async function syncPages() {
     if (!res.ok) throw new Error(`HTTP 状态异常: ${res.status}`);
     const pagesList = await res.json();
     
-    // 过滤出所有京东客服活动页面（包含 imSettings 或 store.jddj.com）
+    // 过滤出所有京东客服活动页面（包含 imSettings，或者包含 store.jddj.com 且属于 notify 或 frame 路径）
     const targetPages = pagesList.filter(p => 
       p.type === 'page' && 
-      (p.url.includes('imSettings') || p.url.includes('store.jddj.com'))
+      (
+        p.url.includes('imSettings') || 
+        p.url.includes('store.jddj.com/notify/') || 
+        p.url.includes('store.jddj.com/frame/')
+      )
     );
     
     const targetPageIds = new Set(targetPages.map(p => p.id));
@@ -62,7 +66,7 @@ async function syncPages() {
       }
     }
     
-    // 2. 建立新标签页的连接
+    // 2. 建立新标签页 the 连接
     for (const pageInfo of targetPages) {
       if (!activeConnections.has(pageInfo.id)) {
         connectToPage(pageInfo);
@@ -95,18 +99,14 @@ async function syncPages() {
 
 // 连接单个标签页并启动其专属监测循环
 function connectToPage(pageInfo) {
-  // 临时防止重复连接
   activeConnections.set(pageInfo.id, { ws: null, title: pageInfo.title, url: pageInfo.url });
   
   console.log(`[CONNECT] 正在连接新店铺标签页: "${pageInfo.title}" -> ${pageInfo.url}`);
   const ws = new WebSocket(pageInfo.webSocketDebuggerUrl);
   
   ws.onopen = () => {
-    // 放入活动 Map 中
     activeConnections.set(pageInfo.id, { ws, title: pageInfo.title, url: pageInfo.url });
     console.log(`[SUCCESS] 成功接入店铺 "${pageInfo.title}" 监测线程。`);
-    
-    // 启动该页面的专属自动回复监测循环
     runMonitoringLoopForPage(pageInfo.id);
   };
   
@@ -122,7 +122,7 @@ function connectToPage(pageInfo) {
   };
 }
 
-// 发送指令给特定页面的封装（包含 5 秒超时保护，防止 Promise 悬空卡死）
+// 发送指令给特定页面的封装（包含 5 秒超时保护，防止 CDP 无响应卡死）
 function evaluateInBrowser(ws, expression) {
   return new Promise((resolve, reject) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -135,12 +135,11 @@ function evaluateInBrowser(ws, expression) {
       method: "Runtime.evaluate",
       params: {
         expression,
-        awaitPromise: true,
+        awaitPromise: false, // 优化：更改为同步非阻塞式立即求值，不等待悬空 Promise
         returnByValue: true
       }
     });
     
-    // 设置 5 秒超时定时器，防止 CDP 无响应导致 Node.js 程序无限卡死
     const timeoutId = setTimeout(() => {
       ws.removeEventListener('message', handleMessage);
       reject(new Error("浏览器 CDP 执行超时(5000ms)"));
@@ -149,7 +148,7 @@ function evaluateInBrowser(ws, expression) {
     const handleMessage = (event) => {
       const response = JSON.parse(event.data);
       if (response.id === id) {
-        clearTimeout(timeoutId); // 成功接收，清除超时器
+        clearTimeout(timeoutId);
         ws.removeEventListener('message', handleMessage);
         if (response.error) {
           reject(response.error);
@@ -181,8 +180,8 @@ async function runMonitoringLoopForPage(pageId) {
     
     try {
       // 1. 在浏览器内部执行监测逻辑
-      // 优化：重构了全量 DOM 元素检索机制，避免 querySelectorAll('*') 导致的 CPU 暴死卡顿
-      const result = await evaluateInBrowser(conn.ws, `(async () => {
+      // 优化：重构为纯同步、“非阻塞式状态机”，剔除了 evaluate 内部的 sleep 延时，执行时长小于 5 毫秒
+      const result = await evaluateInBrowser(conn.ws, `(() => {
         try {
           let shopName = "";
           const shopHeader = document.querySelector('.im-dashboard-container, [class*=\"dashboard\"]');
@@ -191,16 +190,18 @@ async function runMonitoringLoopForPage(pageId) {
             shopName = headerText.split('\\n')[0] || "";
           }
           
-          // 优化：仅在 checkbox 及其 wrapper 范围内查找，拒绝性能损耗
-          const unreadLabel = Array.from(document.querySelectorAll('.jd-im-checkbox-wrapper, label'))
-            .find(el => (el.innerText || '').includes('只看未读'));
-          if (unreadLabel) {
-            const parent = unreadLabel.parentElement;
-            const checkbox = parent ? parent.querySelector('input[type=\"checkbox\"]') : null;
-            if (checkbox && !checkbox.checked) {
-              checkbox.click();
-              await new Promise(r => setTimeout(r, 1000));
+          // 确保勾选“只看未读”复选框（利用高性能 CSS 选择器匹配）
+          let checkbox = document.querySelector('label.jd-im-checkbox-wrapper input.jd-im-checkbox-input');
+          if (!checkbox) {
+            const labelSpan = document.querySelector('span[title=\"只看未读\"]');
+            if (labelSpan) {
+              const label = labelSpan.closest('label');
+              if (label) checkbox = label.querySelector('input[type=\"checkbox\"]');
             }
+          }
+          if (checkbox && !checkbox.checked) {
+            checkbox.click();
+            return { success: true, action: "checking_unread", hasUnread: false, unreadCount: 0, shopName };
           }
           
           // 获取当前未回复的顾客列表
@@ -208,37 +209,59 @@ async function runMonitoringLoopForPage(pageId) {
           const unreadCount = customerItems.length;
           
           if (unreadCount === 0) {
-            return { hasUnread: false, unreadCount: 0, shopName };
+            return { success: true, hasUnread: false, unreadCount: 0, shopName };
           }
           
-          // 提取第一个顾客昵称
+          // 提取第一个未读顾客的昵称
           const firstCustomer = customerItems[0];
-          const name = firstCustomer.innerText.replace(/\\n/g, ' ').split(' ')[0] || firstCustomer.innerText.replace(/\\n/g, ' ');
+          const rawText = firstCustomer.innerText || "";
+          const targetCustomer = rawText.split('\\n')[0].trim();
           
-          // 点击加载会话
-          firstCustomer.click();
-          await new Promise(r => setTimeout(r, 1500));
+          // 读取右侧当前正在对话的顾客名字
+          const currentChatHeader = document.querySelector('.sc-cpclqO span') || 
+                                    document.querySelector('[class*=\"chat-header\"] span') ||
+                                    document.querySelector('[class*=\"title\"] span');
+          const currentChatCustomer = currentChatHeader ? currentChatHeader.innerText.trim() : "";
           
-          // 检测是否已经有过客服回复记录
-          const chatContainer = document.querySelector('.sc-CZWsc') || document.body;
-          const chatText = chatContainer ? chatContainer.innerText : '';
-          const hasRepliedBefore = chatText.includes('客服') || 
-                                   chatText.includes('店小二') ||
-                                   chatText.includes('自动回复') ||
-                                   chatText.includes('收到您的消息');
+          // 对比当前会话和待回复会话。如果不一致，则点击切换，并立即返回（让右侧在下一轮轮询前自然加载完成）
+          const cleanTarget = targetCustomer.replace(/\\*/g, '');
+          const cleanCurrent = currentChatCustomer.replace(/\\*/g, '');
+          if (!cleanCurrent || !cleanCurrent.includes(cleanTarget)) {
+            firstCustomer.click();
+            return { 
+              success: true, 
+              action: "switching_session", 
+              targetCustomer, 
+              currentChatCustomer, 
+              hasUnread: false, 
+              unreadCount, 
+              shopName 
+            };
+          }
           
-          // 获取最近顾客发送的内容
+          // 若已经处于当前未读会话中，读取最新消息
           let latestText = "";
           const bubbleContainers = Array.from(document.querySelectorAll('.sc-CZWsc div[class*=\"bubble\"], [class*=\"msg-content\"]'));
           if (bubbleContainers.length > 0) {
             latestText = bubbleContainers[bubbleContainers.length - 1].innerText || "";
           }
           
+          // 检测是否已经有过客服回复记录
+          const chatContainer = document.querySelector('.sc-CZWsc') || 
+                                document.querySelector('[class*=\"chat-message-list\"]') || 
+                                document.querySelector('[class*=\"chat-container\"]');
+          const chatText = chatContainer ? chatContainer.innerText : '';
+          const hasRepliedBefore = chatText.includes('客服') || 
+                                   chatText.includes('店小二') ||
+                                   chatText.includes('自动回复') ||
+                                   chatText.includes('收到您的消息');
+          
           return {
+            success: true,
             hasUnread: true,
             unreadCount,
-            shopName: shopName || name,
-            customerName: name,
+            shopName: shopName || targetCustomer,
+            customerName: targetCustomer,
             latestText: latestText.substring(0, 100).trim(),
             hasRepliedBefore
           };
@@ -284,7 +307,7 @@ async function runMonitoringLoopForPage(pageId) {
           console.log(`${displayShop} [ACTION] 正在发送自动回复: "${replyContent}"`);
           
           // 执行自动发送
-          const sendResult = await evaluateInBrowser(conn.ws, `(async () => {
+          const sendResult = await evaluateInBrowser(conn.ws, `(() => {
             try {
               let editor = document.querySelector('.ql-editor') || 
                            document.querySelector('[contenteditable=\"true\"]') ||
@@ -315,8 +338,6 @@ async function runMonitoringLoopForPage(pageId) {
                 editor.dispatchEvent(new Event('input', { bubbles: true }));
               }
               
-              await new Promise(r => setTimeout(r, 500));
-              
               const sendBtn = Array.from(document.querySelectorAll('button, div, span'))
                 .find(el => (el.innerText || '').trim() === '发送' && el.tagName !== 'SPAN');
                 
@@ -332,7 +353,7 @@ async function runMonitoringLoopForPage(pageId) {
           if (sendResult && sendResult.success) {
             console.log(`${displayShop} [SUCCESS] 回复发送成功！`);
             repliedCustomers.add(customerKey);
-            await new Promise(r => setTimeout(r, 3000)); // 成功后延时同步
+            await new Promise(r => setTimeout(r, 2000)); // 成功后短暂延时
           } else {
             console.error(`${displayShop} [ERROR] 回复发送失败: ${sendResult ? sendResult.error : '未知错误'}`);
           }
@@ -342,7 +363,7 @@ async function runMonitoringLoopForPage(pageId) {
     } catch (err) {
       console.error(`${shopLabel} [ERROR] 轮询异常:`, err.message);
       if (err.message.includes("CDP 执行超时") || err.message.includes("WebSocket") || err.message.includes("关闭")) {
-        break; // 退出当前监测线程，sync 线程会自动为该页面重新建立连接
+        break; // 退出当前监测，等待重新接入
       }
     }
     
