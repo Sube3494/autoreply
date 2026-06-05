@@ -23,11 +23,11 @@ sleep 1  # 等待 VNC 服务绑定端口
 /opt/novnc/utils/novnc_proxy --vnc 127.0.0.1:5900 --listen 0.0.0.0:6080 &
 echo "[start.sh] noVNC 网页投影客户端已在 6080 端口就绪！"
 
-# 5. 启动自带的 Google Chrome，启用 9222 端口，强制语言为中文 zh-CN
-# 核心：必须加上 --disable-gpu 和 --disable-software-rasterizer 以防在无显卡容器中闪退
-google-chrome-stable \
+# 5. 启动自带的 Google Chrome，显式绑定 DISPLAY 变量，并重定向启动日志到文件以供诊断
+# 核心：将数据目录改为 /root/chrome_profile，规避工作区权限冲突，并加上调试诊断重定向
+DISPLAY=:99 google-chrome-stable \
     --remote-debugging-port=9222 \
-    --user-data-dir=/app/chrome_profile \
+    --user-data-dir=/root/chrome_profile \
     --no-sandbox \
     --disable-dev-shm-usage \
     --disable-gpu \
@@ -35,7 +35,8 @@ google-chrome-stable \
     --start-maximized \
     --window-size=1280,800 \
     --lang=zh-CN \
-    "https://store.jddj.com/frame/1032/5120" &
+    --test-type \
+    "https://store.jddj.com/frame/1032/5120" > /app/chrome_start.log 2>&1 &
 
 # 6. 等待浏览器完全打开并建立调试接口
 sleep 5

@@ -9,7 +9,7 @@ services:
       - "6080:6080" # 映射外部访问虚拟桌面的 noVNC 端口
     volumes:
       # 持久化数据卷，挂载浏览器登录 Session 目录，确保重启容器无需重新登录
-      - ./chrome_profile:/app/chrome_profile
+      - ./chrome_profile:/root/chrome_profile
       # 持久化挂载配置文件，方便在宿主机上修改回复文案与规则后直接生效
       - ./config.json:/app/config.json
     restart: always

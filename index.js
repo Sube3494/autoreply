@@ -71,7 +71,21 @@ async function syncPages() {
     
   } catch (err) {
     console.error("[ERROR] 同步标签页失败，请确保 Chrome 9222 调试端口已开启且无网络阻塞。错误:", err.message);
-    // 如果全部失败，清空本地连接
+    
+    // 自我诊断：如果连接不上调试端口，自动读取并输出 Chrome 启动日志
+    const logPath = '/app/chrome_start.log';
+    if (fs.existsSync(logPath)) {
+      try {
+        const chromeLog = fs.readFileSync(logPath, 'utf8');
+        console.error("----------------------------------------------------------------");
+        console.error("[DIAGNOSE] 自动诊断：检测到 Chrome 启动错误日志，具体内容如下:");
+        console.error(chromeLog);
+        console.error("----------------------------------------------------------------");
+      } catch (e) {
+        console.error("[DIAGNOSE] 读取 Chrome 日志失败:", e.message);
+      }
+    }
+    
     for (const [id, conn] of activeConnections.entries()) {
       try { conn.ws.close(); } catch (e) {}
     }
