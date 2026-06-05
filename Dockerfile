@@ -1,6 +1,6 @@
 FROM node:24-bullseye
 
-# 1. 安装系统图形支持软件、底层依赖包、中文字体以及 Xvfb / VNC 桌面环境
+# 1. 安装系统图形支持软件、中文字体以及 Xvfb / VNC 桌面环境
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -11,13 +11,6 @@ RUN apt-get update && apt-get install -y \
     fluxbox \
     dbus-x11 \
     fonts-wqy-microhei \
-    libnss3 \
-    libnspr4 \
-    libatk-bindings2.0-0 \
-    libgbm1 \
-    libasound2 \
-    libxtst6 \
-    libxss1 \
     && wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get install -y ./google-chrome-stable_current_amd64.deb \
     && rm google-chrome-stable_current_amd64.deb \
