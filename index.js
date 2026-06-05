@@ -161,24 +161,24 @@ function evaluateInBrowser(ws, expression) {
 
 // 针对单店铺页面的专属监测循环
 async function runMonitoringLoopForPage(pageId) {
+  let loopCount = 0;
+  
   while (true) {
     const conn = activeConnections.get(pageId);
-    // 如果连接已经被移除或关闭，则退出此页面的监测循环
     if (!conn || !conn.ws || conn.ws.readyState !== WebSocket.OPEN) {
       break;
     }
     
     const shopLabel = `[店铺: ${conn.title.substring(0, 15)}]`;
+    loopCount++;
     
     try {
       // 1. 在浏览器内部执行监测逻辑
       const result = await evaluateInBrowser(conn.ws, `(async () => {
         try {
-          // 获取页面中的“客服”或“在线”状态，读取实际店铺名
           let shopName = "";
           const shopHeader = document.querySelector('.im-dashboard-container, [class*=\"dashboard\"]');
           if (shopHeader) {
-            // 尝试拿首行的店铺和客服名称
             const headerText = shopHeader.innerText || "";
             shopName = headerText.split('\\n')[0] || "";
           }
@@ -197,8 +197,10 @@ async function runMonitoringLoopForPage(pageId) {
           
           // 获取当前未回复的顾客列表
           const customerItems = Array.from(document.querySelectorAll('.sc-ipUnzB, [class*=\"customer-item\"]'));
-          if (customerItems.length === 0) {
-            return { hasUnread: false, shopName };
+          const unreadCount = customerItems.length;
+          
+          if (unreadCount === 0) {
+            return { hasUnread: false, unreadCount: 0, shopName };
           }
           
           // 提取第一个顾客昵称
@@ -226,6 +228,7 @@ async function runMonitoringLoopForPage(pageId) {
           
           return {
             hasUnread: true,
+            unreadCount,
             shopName: shopName || name,
             customerName: name,
             latestText: latestText.substring(0, 100).trim(),
@@ -236,6 +239,14 @@ async function runMonitoringLoopForPage(pageId) {
           return { success: false, error: e.message };
         }
       })()`);
+      
+      // 每 10 次轮询（约 30 秒）输出一次运行心跳，供用户确认状态并诊断选择器
+      if (loopCount >= 10) {
+        loopCount = 0;
+        const unreadCount = result ? (result.unreadCount || 0) : 0;
+        const displayShop = (result && result.shopName) ? `[${result.shopName}]` : shopLabel;
+        console.log(`[HEARTBEAT] ${displayShop} 自动回复监测运行中。当前排队未读顾客数: ${unreadCount}`);
+      }
       
       if (result && result.hasUnread) {
         const customerKey = result.customerName.trim();
